@@ -3,14 +3,14 @@ import pandas as pd
 import os
 import re
 import ast
-import random
 import google.generativeai as palm
 from langchain.llms import GooglePalm
 from fuzzywuzzy import fuzz
 
-seed_value = 42
-os.environ['PYTHONHASHSEED'] = str(seed_value)
-random.seed(seed_value)
+
+# Initialize session state variables
+if 'session_state' not in st.session_state:
+    st.session_state['session_state'] = {'jd_skills': [], 'jd_experience': 0}
 
 
 def hybrid_similarity(jd_skills, resume_skills, threshold):
@@ -104,7 +104,7 @@ def get_jd_skills_and_exp(jd_text):
     prompt2 = " Return minimum experience in years number only"
 
     skills = get_palm_response(prompt1, jd_text)
-    skills = skills.lower()
+    #skills = skills.lower()
     try:
         skills = ast.literal_eval(skills)
     except:
@@ -169,15 +169,36 @@ else:
 
     if st.button("Extract Skills and Experience"):
         jd_full_text, jd_skills, jd_experience = get_jd_skills_and_exp(jd_full_text)
+
+        # Update session state variables
+        st.session_state['session_state']['jd_skills'] = jd_skills
+        st.session_state['session_state']['jd_experience'] = jd_experience
+        st.session_state['session_state']['jd_full_text'] = jd_full_text
+
         st.write(f"SKILLS REQUIRED: {jd_skills}")
         st.write(f"EXPERIENCE REQUIRED: {jd_experience}")
+        #st.write(f"FULL TEXT: {jd_full_text}")
 
     resume_data = pd.read_csv("Resume_Parsed_Sample_v4_with_exp_refurb.csv")
 
     if st.button("Matched Resumes"):
-        jd_full_text, jd_skills, jd_experience = get_jd_skills_and_exp(jd_full_text)
+        jd_full_text_no, jd_skills_no, jd_experience_no = get_jd_skills_and_exp(jd_full_text)#altered
+
+        # Update session state variables
+        #st.session_state['session_state']['jd_skills'] = st.session_state['session_state']['jd_skills']   #altered
+        #st.session_state['session_state']['jd_experience'] = st.session_state['session_state']['jd_experience']
+
+        jd_skills = st.session_state['session_state']['jd_skills']   #altered
+        jd_experience = st.session_state['session_state']['jd_experience']
+        jd_full_text = st.session_state['session_state']['jd_full_text']
+
         st.write(f"SKILLS REQUIRED: {jd_skills}")
         st.write(f"EXPERIENCE REQUIRED: {jd_experience}")
+        #st.write(f"FULL TEXT sess: {jd_full_text}")
+
+        #st.write(f"SKILLS REQUIRED, sess: {st.session_state['session_state']['jd_skills']}")     #altered
+        #st.write(f"EXPERIENCE REQUIRED sess: {st.session_state['session_state']['jd_experience']}")
+        #st.write(f"FULL TEXT sess: {st.session_state['session_state']['jd_full_text']}")
 
         threshold = 90
         final_list = []
@@ -207,8 +228,8 @@ else:
             lambda x: 1 if x['Experience'] >= x['JD_Experience'] else 0, axis=1)
 
         final_data['Matching_Score'] = final_data[['Skill_Similarity', 'Experience_Tag']].apply(
-            lambda x: (x['Skill_Similarity'] + x['Experience_Tag']) / 2 if x['Skill_Similarity'] > 0 else 0,
-            axis=1)
+            lambda x: (2 * x['Skill_Similarity'] + x['Experience_Tag']) / (2 + 1) if x['Skill_Similarity'] > 0 else 0,axis=1)
+
         final_data['Additional_skills'] = final_data['Additional_skills'].apply(
             lambda x: 'No additional skills' if not x else x)
 
@@ -216,7 +237,11 @@ else:
         final_data['Matching_Score'] = final_data['Matching_Score'].apply(
             lambda x: str(int(x * 100)) + '%')
         final_data['Experience'] = final_data['Experience'].apply(lambda x: round(x, 2))
-        final_data = final_data[final_data['Experience'] >= final_data['JD_Experience']]
+
+        final_data = final_data[(final_data['Experience'] >= final_data['JD_Experience']) |
+                        ((final_data['Experience'] >= final_data['JD_Experience'] - 2) &
+                         (final_data['Experience'] < final_data['JD_Experience']))]
+
         top_5_matches = final_data[['Unique_ID', 'Name', 'Matching_Score', 'Experience', 'Matched_Skills',
                                     'Additional_skills', 'Phone Number', 'Email id']]
         top_5_matches = top_5_matches.head(5)
